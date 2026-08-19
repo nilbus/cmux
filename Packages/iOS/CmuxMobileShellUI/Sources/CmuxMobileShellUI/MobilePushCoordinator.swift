@@ -373,7 +373,7 @@ public final class MobilePushCoordinator {
     @discardableResult
     public func enable() async -> Bool {
         guard supportsPushNotifications else { return false }
-        await setEnabledIntent(true).value
+        return await setEnabledIntent(true).value
     }
 
     /// Requests or recovers push only after the authenticated workspace shell
@@ -861,7 +861,7 @@ public final class MobilePushCoordinator {
         guard supportsPushNotifications else {
             return .blocked(.systemNotificationsUnsupported)
         }
-        MobilePushReadiness.resolve(
+        return MobilePushReadiness.resolve(
             authorization: authorization,
             registration: registrationSnapshot,
             mac: macStatus.map(MobilePushReadiness.MacStatus.init),
