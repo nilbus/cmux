@@ -367,11 +367,8 @@ struct MobileSettingsView: View {
                     .accessibilityIdentifier("MobileSettingsTerminalScrollback")
                 }
 
-                // Release builds keep the section to the single agent-alerts
-                // toggle the app always had; the delivery-status diagnostics,
-                // Mac forwarding controls, and test actions are a dev surface
-                // and stay DEBUG-only.
-                Section(L10n.string("mobile.settings.notifications", defaultValue: "Push Alerts")) {
+                if pushCoordinator.supportsPushNotifications {
+                    Section(L10n.string("mobile.settings.notifications", defaultValue: "Push Alerts")) {
 #if DEBUG
                     MobilePushSettingsContent(
                         readiness: pushCoordinator.readiness(
@@ -418,6 +415,7 @@ struct MobileSettingsView: View {
                         applyEnabledIntent: setPhonePushEnabledIntent
                     )
 #endif
+                    }
                 }
 
                 Section {

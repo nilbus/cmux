@@ -169,6 +169,8 @@ final class AppCompositionRoot {
             analytics: analytics.emitter,
             diagnosticLog: diagnosticLog,
             phoneAPIOrigin: auth.config.apiBaseURL,
+            // Personal development teams cannot sign Push Notifications.
+            supportsPushNotifications: false,
             notificationSettings: pushNotificationSettings
         )
         self.pushCoordinator = pushCoordinator
