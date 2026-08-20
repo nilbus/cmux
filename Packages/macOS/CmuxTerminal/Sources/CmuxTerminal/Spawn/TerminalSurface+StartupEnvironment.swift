@@ -99,6 +99,53 @@ extension TerminalSurface {
         return entries.joined(separator: ":")
     }
 
+    /// Removes every entry matching `value` from a `PATH`-style string.
+    ///
+    /// Empty entries are preserved because they name the current directory.
+    public static func pathByRemovingValue(_ value: String, from path: String) -> String {
+        guard !value.isEmpty else { return path }
+        let entries = path
+            .split(separator: ":", omittingEmptySubsequences: false)
+            .map(String.init)
+            .filter { $0 != value }
+        return entries.joined(separator: ":")
+    }
+
+    /// Applies cmux's managed Ghostty CLI environment to a terminal launch.
+    ///
+    /// The directory value is written even when the embedded CLI is missing so
+    /// a stale inherited `GHOSTTY_BIN_DIR` cannot leak into a child shell. Any
+    /// PATH entries equal to the stale directory are removed as well: shell
+    /// integration appends `GHOSTTY_BIN_DIR` to PATH, so a corrupted inherited
+    /// value otherwise survives in both places and reaches child processes
+    /// (e.g. Rust tools that panic on non-UTF-8 environments).
+    ///
+    /// - Parameters:
+    ///   - cliBinPath: The bundle directory containing cmux's CLI helpers.
+    ///   - ghosttyCLIPath: The embedded Ghostty CLI path when it is executable.
+    ///   - currentPath: The current PATH before cmux's bundle directory is added.
+    ///   - environment: The launch environment to update.
+    ///   - protectedKeys: The environment keys managed by cmux.
+    public static func applyManagedGhosttyCLIEnvironment(
+        cliBinPath: String,
+        ghosttyCLIPath: String?,
+        currentPath: String,
+        staleBinDir: String? = nil,
+        to environment: inout [String: String],
+        protectedKeys: inout Set<String>
+    ) {
+        let staleBinDir = staleBinDir ?? environment["GHOSTTY_BIN_DIR"]
+        let sanitizedPath = staleBinDir.map { pathByRemovingValue($0, from: currentPath) } ?? currentPath
+        if let ghosttyCLIPath {
+            environment["GHOSTTY_BIN"] = ghosttyCLIPath
+            protectedKeys.insert("GHOSTTY_BIN")
+        }
+        environment["GHOSTTY_BIN_DIR"] = cliBinPath
+        protectedKeys.insert("GHOSTTY_BIN_DIR")
+        environment["PATH"] = pathByPrependingUniqueDirectory(cliBinPath, to: sanitizedPath)
+        protectedKeys.insert("PATH")
+    }
+
     /// Merges base, additional, and override environments with key
     /// protection, Claude auth-selection inheritance, and config-dir
     /// normalization.
