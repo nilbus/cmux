@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  printf 'Usage: %s pull|push --tag <tag>\n' "$0" >&2
+  exit 2
+}
+
+mode="${1:-}"
+[[ "$mode" == "pull" || "$mode" == "push" ]] || usage
+shift
+[[ "${1:-}" == "--tag" && -n "${2:-}" ]] || usage
+tag="$2"
+
+case "$tag" in
+  *[!A-Za-z0-9._-]*)
+    printf 'error: invalid tag: %s\n' "$tag" >&2
+    exit 2
+    ;;
+esac
+
+home="${HOME:?HOME is required}"
+dev_app="$home/Library/Developer/Xcode/DerivedData/cmux-$tag/Build/Products/Debug/cmux DEV $tag.app"
+prod_app="/Applications/cmux.app"
+dev_info="$dev_app/Contents/Info.plist"
+prod_info="$prod_app/Contents/Info.plist"
+[[ -f "$dev_info" ]] || { printf 'error: tagged dev app not found: %s\n' "$dev_app" >&2; exit 1; }
+[[ -f "$prod_info" ]] || { printf 'error: production app not found: %s\n' "$prod_app" >&2; exit 1; }
+
+dev_bundle_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$dev_info")"
+prod_bundle_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$prod_info")"
+[[ "$prod_bundle_id" == "com.cmuxterm.app" ]] || { printf 'error: unexpected production bundle ID: %s\n' "$prod_bundle_id" >&2; exit 1; }
+[[ "$dev_bundle_id" == com.cmuxterm.app.debug.* ]] || {
+  printf 'error: refusing non-tagged dev bundle ID: %s\n' "$dev_bundle_id" >&2
+  exit 1
+}
+
+app_support="$home/Library/Application Support/cmux"
+preferences="$home/Library/Preferences"
+dev_session="$app_support/session-$dev_bundle_id.json"
+prod_session="$app_support/session-$prod_bundle_id.json"
+dev_preferences="$preferences/$dev_bundle_id.plist"
+prod_preferences="$preferences/$prod_bundle_id.plist"
+
+if [[ "$mode" == pull ]]; then
+  source_bundle_id="$prod_bundle_id"
+  target_bundle_id="$dev_bundle_id"
+  source_session="$prod_session"
+  target_session="$dev_session"
+  source_preferences="$prod_preferences"
+  target_preferences="$dev_preferences"
+else
+  source_bundle_id="$dev_bundle_id"
+  target_bundle_id="$prod_bundle_id"
+  source_session="$dev_session"
+  target_session="$prod_session"
+  source_preferences="$dev_preferences"
+  target_preferences="$prod_preferences"
+fi
+
+[[ -f "$source_session" ]] || { printf 'error: source session not found: %s\n' "$source_session" >&2; exit 1; }
+[[ -f "$source_preferences" ]] || { printf 'error: source preferences not found: %s\n' "$source_preferences" >&2; exit 1; }
+jq empty "$source_session"
+
+timestamp="$(/bin/date +%Y%m%d-%H%M%S)"
+if [[ -f "$target_session" ]]; then
+  /bin/cp -p "$target_session" "$target_session.before-sync-$mode-$timestamp"
+fi
+if [[ -f "$target_preferences" ]]; then
+  /bin/cp -p "$target_preferences" "$target_preferences.before-sync-$mode-$timestamp"
+fi
+
+/bin/cp -p "$source_session" "$target_session"
+tmp_preferences="$(/usr/bin/mktemp "/tmp/cmux-sync-$mode.XXXXXX.plist")"
+trap '/bin/rm -f "$tmp_preferences"' EXIT
+defaults export "$source_bundle_id" "$tmp_preferences" >/dev/null
+defaults import "$target_bundle_id" "$tmp_preferences"
+
+jq empty "$target_session"
+defaults read "$target_bundle_id" >/dev/null
+printf 'synced %s from %s to %s\n' "$mode" "$source_bundle_id" "$target_bundle_id"
+printf 'tag: %s\n' "$tag"
