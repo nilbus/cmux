@@ -1822,3 +1822,7 @@ unset -f _cmux_fix_path
 _cmux_detect_send_tool
 
 _cmux_install_prompt_command
+
+# Keep cmux's prompt hook local to this shell; child processes such as tmux
+# should not snapshot it into their server environment.
+export -n PROMPT_COMMAND 2>/dev/null || true
