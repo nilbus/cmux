@@ -6,6 +6,11 @@ CRATE_DIR="${ROOT}/Native/CommandPaletteNucleoFFI"
 LIB_NAME="libcmux_command_palette_nucleo_ffi.dylib"
 BUILD_OUTPUT_DIR="${TARGET_BUILD_DIR:-${CRATE_DIR}/target}/cmux-nucleo-ffi"
 
+# Xcode build phases do not inherit a login-shell PATH. Prefer rustup's
+# conventional bin directory, then the standard Homebrew prefixes, so a stale
+# ambient cargo/rustc cannot shadow the pinned toolchain.
+export PATH="${CARGO_HOME:-${HOME}/.cargo}/bin:/opt/homebrew/bin:/usr/local/bin:${PATH}"
+
 if ! command -v cargo >/dev/null 2>&1; then
   case "${CMUX_NUCLEO_FFI_REQUIRE_CARGO:-${CI:-0}}" in
     1|true|TRUE|yes|YES)
@@ -15,6 +20,16 @@ if ! command -v cargo >/dev/null 2>&1; then
   esac
   echo "warning: cargo not found; skipping optional ${LIB_NAME} build" >&2
   exit 0
+fi
+
+# When rustup is available, pin the build to the stable toolchain. This avoids
+# using a stale ambient /usr/local/bin/rustc that predates the crate's
+# `edition = "2021"` support. Prepend the toolchain's bin directory to PATH so
+# Cargo resolves the matching rustc instead of the ambient one.
+if command -v rustup >/dev/null 2>&1; then
+  TOOLCHAIN_BIN="$(dirname "$(rustup which --toolchain stable cargo)")"
+  export PATH="$TOOLCHAIN_BIN:$PATH"
+  cargo() { rustup run stable cargo "$@"; }
 fi
 
 rust_target_for_arch() {

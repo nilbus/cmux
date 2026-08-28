@@ -14,4 +14,10 @@ if ! command -v rustup >/dev/null 2>&1; then
   exit 1
 fi
 
+# rustup run selects Cargo but does not keep Cargo from resolving a stale
+# ambient rustc earlier in PATH (e.g. an old /usr/local/bin/rustc). Put the
+# pinned toolchain's bin directory first so Cargo probes the right compiler.
+TOOLCHAIN_BIN="$(dirname "$(rustup which --toolchain "$TOOLCHAIN" cargo)")"
+export PATH="$TOOLCHAIN_BIN:$PATH"
+
 exec rustup run "$TOOLCHAIN" cargo "$@"
