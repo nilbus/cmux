@@ -1211,7 +1211,11 @@ if [[ -n "$TAG" ]]; then
   TAG_ID="$(sanitize_bundle "$TAG")"
   TAG_SLUG="$(sanitize_path "$TAG")"
   if [[ "$NAME_SET" -eq 0 ]]; then
-    APP_NAME="cmux DEV ${TAG_SLUG}"
+    if [[ "$TAG_SLUG" == "nilbus" ]]; then
+      APP_NAME="cmux"
+    else
+      APP_NAME="cmux DEV ${TAG_SLUG}"
+    fi
   fi
   if [[ "$BUNDLE_SET" -eq 0 ]]; then
     BUNDLE_ID="com.cmuxterm.app.debug.${TAG_ID}"

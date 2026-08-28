@@ -159,13 +159,18 @@ cmux_attach_remove_stale_socket() {
 
 # The locally-built tagged macOS Debug .app bundle path (cloud/local reloads both
 # download/install here). Both the DerivedData dir AND the .app basename use the
-# sanitized slug, matching reload.sh (`APP_NAME="cmux DEV ${TAG_SLUG}"`); the raw
-# tag would miss for any tag whose slug differs (e.g. "Fix Foo" -> "fix-foo").
+# sanitized slug, matching reload.sh; nilbus is the one app-name exception.
+# The raw tag would miss for any tag whose slug differs (e.g. "Fix Foo" -> "fix-foo").
 cmux_attach_mac_app_path() {
-  local slug
+  local slug app_name
   slug="$(cmux_attach__slug "$1")"
-  printf '%s/Library/Developer/Xcode/DerivedData/cmux-%s/Build/Products/Debug/cmux DEV %s.app' \
-    "$HOME" "$slug" "$slug"
+  if [[ "$slug" == "nilbus" ]]; then
+    app_name="cmux"
+  else
+    app_name="cmux DEV $slug"
+  fi
+  printf '%s/Library/Developer/Xcode/DerivedData/cmux-%s/Build/Products/Debug/%s.app' \
+    "$HOME" "$slug" "$app_name"
 }
 
 # Enable the opt-in iOS pairing host on the tagged Mac bundle. Must be written
