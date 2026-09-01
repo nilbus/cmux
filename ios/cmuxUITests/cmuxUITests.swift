@@ -38,7 +38,7 @@ final class cmuxUITests: XCTestCase {
         )
         defer { app.terminate() }
 
-        XCTAssertTrue(app.buttons["signin.apple"].waitForExistence(timeout: 8))
+        XCTAssertFalse(app.buttons["signin.apple"].exists)
         XCTAssertTrue(app.buttons["signin.google"].exists)
 
         let emailField = app.textFields["Email"]
@@ -564,7 +564,7 @@ final class cmuxUITests: XCTestCase {
 
         primaryButton.tap()
 
-        XCTAssertTrue(app.buttons["signin.apple"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.buttons["signin.google"].waitForExistence(timeout: 8))
         XCTAssertFalse(element("MobileOnboardingConnectScene").exists)
     }
 

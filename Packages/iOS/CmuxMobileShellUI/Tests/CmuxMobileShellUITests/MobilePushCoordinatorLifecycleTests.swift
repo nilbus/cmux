@@ -253,6 +253,47 @@ private final class LifecyclePushURLProtocol: URLProtocol,
 
 @Suite struct MobilePushCoordinatorLifecycleTests {
     @MainActor
+    @Test func unsupportedBuildDoesNotUseNotificationServices() async {
+        let registration = LifecyclePushRegistration()
+        let suiteName = "push-coordinator-unsupported-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.set(true, forKey: "cmux.notifications.pushEnabled")
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        var authorizationRequests = 0
+        var registrationRequests = 0
+
+        let coordinator = MobilePushCoordinator(
+            registration: registration,
+            supportsPushNotifications: false,
+            defaults: defaults,
+            authorizationStatus: {
+                authorizationRequests += 1
+                return .authorized
+            },
+            requestAuthorization: {
+                authorizationRequests += 1
+                return true
+            },
+            registerForRemoteNotifications: {
+                registrationRequests += 1
+            }
+        )
+
+        await coordinator.refreshReadiness()
+        await coordinator.workspaceListDidBecomeVisible()
+        await coordinator.networkDidBecomeReachable()
+
+        #expect(!coordinator.isEnabled)
+        #expect(!(await coordinator.enable()))
+        #expect(authorizationRequests == 0)
+        #expect(registrationRequests == 0)
+        #expect(
+            coordinator.readiness(macStatus: nil)
+                == .blocked(.systemNotificationsUnsupported)
+        )
+    }
+
+    @MainActor
     @Test func callbackFailureOffersRetryAndSuccessfulTokenRecoversReadiness() async {
         let registration = LifecyclePushRegistration()
         var registrationRequests = 0

@@ -121,6 +121,17 @@ while (( i < 3 )); do
     i=$(( i + 1 ))
     (( i == 3 )) && cd "$CMUX_CD_TARGET"
     _render
+    if (( i == 1 )); then
+        _emit CMUX_HOOK_TYPE "$(type -t _cmux_prompt_command 2>/dev/null)"
+        _emit CMUX_PROMPT_DECL "$(declare -p PROMPT_COMMAND 2>/dev/null)"
+        if env | grep -q '^PROMPT_COMMAND='; then
+            _emit CHILD_PROMPT_ENV present
+        else
+            _emit CHILD_PROMPT_ENV absent
+        fi
+        child_stderr="$(HOME="$CMUX_CHILD_HOME" bash --login -c ':' 2>&1 >/dev/null)"
+        _emit CHILD_LOGIN_STDERR "$child_stderr"
+    fi
     _emit "PS1_$i" "$PS1"
     _emit "PC_$i" "$PROMPT_COMMAND"
 done
@@ -169,6 +180,7 @@ def _run_driver(*, with_starship: bool = True) -> dict[str, str]:
                 "STARSHIP_COUNTER_FILE": str(tmp_path / "counter"),
                 "CMUX_CD_TARGET": str(cd_target),
                 "CMUX_WITH_STARSHIP": "1" if with_starship else "0",
+                "CMUX_CHILD_HOME": str(tmp_path),
             }
         )
 
@@ -203,6 +215,14 @@ def test_starship_precmd_survives_under_cmux_bash_bootstrap() -> None:
         f"\n\n--- driver stdout ---\n{fields.get('__stdout__', '')}"
         f"\n--- driver stderr ---\n{fields.get('__stderr__', '')}"
     )
+
+    # The integration keeps cmux's hook usable locally while removing only the
+    # environment export attribute inherited by child processes.
+    assert fields.get("CMUX_HOOK_TYPE") == "function", debug
+    assert "PROMPT_COMMAND" in fields.get("CMUX_PROMPT_DECL", ""), debug
+    assert "_cmux_prompt_command" in fields.get("CMUX_PROMPT_DECL", ""), debug
+    assert fields.get("CHILD_PROMPT_ENV") == "absent", debug
+    assert "_cmux_prompt_command: command not found" not in fields.get("CHILD_LOGIN_STDERR", ""), debug
 
     # Sanity: starship init appended its hook before the first prompt.
     assert "starship_precmd" in fields.get("PC_AFTER_RC", ""), (

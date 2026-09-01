@@ -228,6 +228,77 @@ struct GhosttyTerminalStartupEnvironmentTests {
     }
 
     @Test
+    func testManagedGhosttyCLIEnvironmentReplacesInheritedBinDirectory() {
+        let staleBinDir = "4\u{001F}A\u{FFFD}\u{FFFD}\u{0690}\u{FFFD}"
+        var environment = [
+            "GHOSTTY_BIN": "/stale/ghostty",
+            "GHOSTTY_BIN_DIR": staleBinDir,
+        ]
+        var protectedKeys: Set<String> = []
+
+        TerminalSurface.applyManagedGhosttyCLIEnvironment(
+            cliBinPath: "/Applications/cmux.app/Contents/Resources/bin",
+            ghosttyCLIPath: "/Applications/cmux.app/Contents/Resources/bin/ghostty",
+            currentPath: "/usr/bin:\(staleBinDir):/bin",
+            staleBinDir: staleBinDir,
+            to: &environment,
+            protectedKeys: &protectedKeys
+        )
+
+        expectEqual(
+            environment["GHOSTTY_BIN"],
+            "/Applications/cmux.app/Contents/Resources/bin/ghostty"
+        )
+        expectEqual(
+            environment["GHOSTTY_BIN_DIR"],
+            "/Applications/cmux.app/Contents/Resources/bin"
+        )
+        expectEqual(
+            environment["PATH"],
+            "/Applications/cmux.app/Contents/Resources/bin:/usr/bin:/bin"
+        )
+        expectTrue(protectedKeys.contains("GHOSTTY_BIN_DIR"))
+    }
+
+    @Test
+    func testManagedGhosttyCLIEnvironmentScrubsProcessEnvironmentStaleBinDirFromPath() {
+        let staleBinDir = "4\u{001F}A\u{FFFD}\u{FFFD}\u{0690}\u{FFFD}"
+        var environment: [String: String] = [:]
+        var protectedKeys: Set<String> = []
+
+        TerminalSurface.applyManagedGhosttyCLIEnvironment(
+            cliBinPath: "/Applications/cmux.app/Contents/Resources/bin",
+            ghosttyCLIPath: "/Applications/cmux.app/Contents/Resources/bin/ghostty",
+            currentPath: "/usr/bin:\(staleBinDir)",
+            staleBinDir: staleBinDir,
+            to: &environment,
+            protectedKeys: &protectedKeys
+        )
+
+        expectEqual(environment["GHOSTTY_BIN_DIR"], "/Applications/cmux.app/Contents/Resources/bin")
+        expectEqual(environment["PATH"], "/Applications/cmux.app/Contents/Resources/bin:/usr/bin")
+    }
+
+    @Test
+    func testPathByRemovingValueDropsMatchingEntries() {
+        let stale = "4\u{001F}A\u{FFFD}"
+        let path = "/usr/bin:\(stale):/bin:\(stale)"
+
+        expectEqual(
+            TerminalSurface.pathByRemovingValue(stale, from: path),
+            "/usr/bin:/bin"
+        )
+        expectEqual(
+            TerminalSurface.pathByRemovingValue(stale, from: ":\(stale):"),
+            "::"
+        )
+        expectEqual(
+            TerminalSurface.pathByRemovingValue("", from: "/usr/bin:/bin"),
+            "/usr/bin:/bin"
+        )
+    }
+
+    @Test
     func testInstallAgentCommandShimsCreatesHermesAndClaudeExecutablesOutsideBundleBin() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(

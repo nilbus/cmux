@@ -2,22 +2,6 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>com.apple.developer.applesignin</key>
-	<array>
-		<string>Default</string>
-	</array>
-
-	<!-- APNs remote push. "development" targets the sandbox APNs host, matching
-	     DEBUG/dev tagged builds (which register sandbox device tokens). Flip to
-	     "production" for TestFlight/App Store archives (ideally via a build
-	     setting) so production device tokens are accepted. -->
-	<key>aps-environment</key>
-	<string>development</string>
-
-	<!-- Allows the .time-sensitive interruption level used by agent push. -->
-	<key>com.apple.developer.usernotifications.time-sensitive</key>
-	<true/>
-
 	<!-- Exact bundle access only. The provisioning profile may authorize a
 	     wildcard, but the signed app claims only its own Keychain access group. -->
 	<key>keychain-access-groups</key>
@@ -33,9 +17,6 @@
 	<true/>
 
 	<key>com.apple.developer.contacts.notes</key>
-	<true/>
-
-	<key>com.apple.developer.usernotifications.time-sensitive</key>
 	<true/>
 
 	-->

@@ -65,6 +65,9 @@ private actor MobilePushSingleFlight<Value: Sendable> {
 @Observable
 public final class MobilePushCoordinator {
     private let registration: any PushRegistering
+    /// Whether this app build is allowed to use APNs and system notifications.
+    /// Personal development teams cannot sign the Push Notifications capability.
+    public let supportsPushNotifications: Bool
     private let analytics: any AnalyticsEmitting
     private let diagnosticLog: DiagnosticLog?
     /// The system-notification surface used by the cold dismiss lane. Owned here
@@ -188,6 +191,7 @@ public final class MobilePushCoordinator {
         analytics: any AnalyticsEmitting = NoopAnalytics(),
         diagnosticLog: DiagnosticLog? = nil,
         phoneAPIOrigin: String = "https://cmux.com",
+        supportsPushNotifications: Bool = true,
         defaults: UserDefaults = .standard,
         deliveredNotificationClearer: any DeliveredNotificationClearing = SystemDeliveredNotificationClearer(),
         pendingDismissQueue: PendingNotificationDismissQueue = PendingNotificationDismissQueue(),
@@ -212,6 +216,7 @@ public final class MobilePushCoordinator {
         authorizationRequestTimeout: Duration = .seconds(120)
     ) {
         self.registration = registration
+        self.supportsPushNotifications = supportsPushNotifications
         self.replyRetrySleep = replyRetrySleep
         self.notificationSettingsClock = notificationSettingsClock
         self.notificationSettingsTimeout = notificationSettingsTimeout
@@ -220,7 +225,7 @@ public final class MobilePushCoordinator {
         self.diagnosticLog = diagnosticLog
         self.phoneAPIOrigin = phoneAPIOrigin
         self.defaults = defaults
-        self.enabledMirror = defaults.bool(forKey: Self.enabledKey)
+        self.enabledMirror = supportsPushNotifications && defaults.bool(forKey: Self.enabledKey)
         self.deliveredNotificationClearer = deliveredNotificationClearer
         self.pendingDismissQueue = pendingDismissQueue
         self.now = now
@@ -246,7 +251,7 @@ public final class MobilePushCoordinator {
     }
 
     /// Whether the user has opted into phone notifications (synchronous mirror).
-    public var isEnabled: Bool { enabledMirror }
+    public var isEnabled: Bool { supportsPushNotifications && enabledMirror }
 
     /// Commits a Settings toggle choice synchronously, then reconciles OS and
     /// backend state for that generation. A later choice invalidates every
@@ -255,6 +260,13 @@ public final class MobilePushCoordinator {
     @discardableResult
     public func setEnabledIntent(_ enabled: Bool) -> Task<Bool, Never> {
         settingsIntentTask?.cancel()
+        guard supportsPushNotifications else {
+            settingsIntentGeneration &+= 1
+            enabledMirror = false
+            defaults.removeObject(forKey: Self.enabledKey)
+            registrationSnapshot = .disabled
+            return Task { false }
+        }
         let generation = beginSettingsIntent(enabled)
         let registration = registration
         let task = Task { @MainActor [weak self, registration] in
@@ -321,6 +333,7 @@ public final class MobilePushCoordinator {
     /// registration after system authorization permits delivery. Call once at
     /// launch from the AppDelegate.
     public func configure(delegate: any UNUserNotificationCenterDelegate) {
+        guard supportsPushNotifications else { return }
         diagnosticLog?.recordAppEvent(.pushConfigured)
         let center = UNUserNotificationCenter.current()
         center.delegate = delegate
@@ -359,12 +372,14 @@ public final class MobilePushCoordinator {
     /// and persist the flag. Returns whether authorization was granted.
     @discardableResult
     public func enable() async -> Bool {
-        await setEnabledIntent(true).value
+        guard supportsPushNotifications else { return false }
+        return await setEnabledIntent(true).value
     }
 
     /// Requests or recovers push only after the authenticated workspace shell
     /// is mounted. An explicit app opt-out remains authoritative.
     public func workspaceListDidBecomeVisible() async {
+        guard supportsPushNotifications else { return }
         let initialSettingsGeneration = settingsIntentGeneration
         if defaults.object(forKey: Self.enabledKey) as? Bool == false {
             return
@@ -484,6 +499,7 @@ public final class MobilePushCoordinator {
 
     /// Hand a freshly-registered APNs token to the network layer.
     public func handleDeviceToken(_ token: Data) async {
+        guard supportsPushNotifications else { return }
         diagnosticLog?.recordAppEvent(.pushDeviceTokenReceived, count: token.count)
         diagnosticLog?.recordAppEvent(.pushBackendSyncStarted)
         await registration.register(deviceToken: token)
@@ -496,6 +512,7 @@ public final class MobilePushCoordinator {
     /// Make the APNs callback failure visible without retaining Apple's
     /// free-form error text, which can contain unstable device details.
     public func handleDeviceTokenFailure(error: (any Error)? = nil) async {
+        guard supportsPushNotifications else { return }
         diagnosticLog?.recordAppEvent(
             .pushDeviceTokenRegistrationFailed,
             failure: error.map(DiagnosticFailureKind.classify) ?? .unknown
@@ -508,6 +525,7 @@ public final class MobilePushCoordinator {
 
     /// User-triggered repair for a failed APNs token callback.
     public func retryDeviceTokenRegistration() {
+        guard supportsPushNotifications else { return }
         diagnosticLog?.recordAppEvent(.pushRemoteRegistrationRequested)
         hasRequestedRemoteRegistration = true
         registerForRemoteNotifications()
@@ -515,6 +533,7 @@ public final class MobilePushCoordinator {
 
     /// Re-upload the cached token when possible (e.g. after sign-in).
     public func syncTokenIfPossible() async {
+        guard supportsPushNotifications else { return }
         diagnosticLog?.recordAppEvent(.pushBackendSyncStarted)
         await registration.syncTokenIfPossible()
         let snapshot = await registration.snapshot
@@ -528,6 +547,12 @@ public final class MobilePushCoordinator {
     /// Call on every foreground transition because users can revoke permission
     /// in iOS Settings while cmux is suspended.
     public func refreshReadiness() async {
+        guard supportsPushNotifications else {
+            authorization = .unsupported
+            systemSettings = .authorizationOnly(.unsupported)
+            registrationSnapshot = .disabled
+            return
+        }
         guard let settings = await readNotificationSettingsBounded() else {
             return
         }
@@ -743,6 +768,7 @@ public final class MobilePushCoordinator {
     /// Retries an exhausted registration when a meaningful network path
     /// change reports that the API may be reachable again.
     public func networkDidBecomeReachable() async {
+        guard supportsPushNotifications else { return }
         await recoverRegistrationIfNeeded()
     }
 
@@ -832,7 +858,10 @@ public final class MobilePushCoordinator {
         macStatus: MobileHostPhonePushStatus?,
         macAccountMismatch: Bool = false
     ) -> MobilePushReadiness {
-        MobilePushReadiness.resolve(
+        guard supportsPushNotifications else {
+            return .blocked(.systemNotificationsUnsupported)
+        }
+        return MobilePushReadiness.resolve(
             authorization: authorization,
             registration: registrationSnapshot,
             mac: macStatus.map(MobilePushReadiness.MacStatus.init),
@@ -844,6 +873,7 @@ public final class MobilePushCoordinator {
 
     /// Opens this app's iOS notification settings for a denied authorization.
     public func openSystemSettings() {
+        guard supportsPushNotifications else { return }
         guard let url = URL(
             string: UIApplication.openNotificationSettingsURLString
         ) else { return }
@@ -902,6 +932,7 @@ public final class MobilePushCoordinator {
     /// with the credentials captured before the local-first sign-out cleared
     /// the live token store.
     public func unregisterFromServer(accessToken: String?, refreshToken: String?) async {
+        guard supportsPushNotifications else { return }
         await registration.unregisterFromServer(accessToken: accessToken, refreshToken: refreshToken)
     }
 
@@ -911,6 +942,7 @@ public final class MobilePushCoordinator {
         accessToken: String?,
         refreshToken: String?
     ) async {
+        guard supportsPushNotifications else { return }
         await registration.unregisterFromServer(
             accountID: accountID,
             accessToken: accessToken,

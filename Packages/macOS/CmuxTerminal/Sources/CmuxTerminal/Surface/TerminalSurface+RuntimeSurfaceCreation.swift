@@ -167,19 +167,27 @@ extension TerminalSurface {
         if let cliBinURL = Bundle.main.resourceURL?.appendingPathComponent("bin") {
             let cliBinPath = cliBinURL.path
             let ghosttyCLIPath = cliBinURL.appendingPathComponent("ghostty").path
-            if FileManager.default.isExecutableFile(atPath: ghosttyCLIPath) {
-                setManagedEnvironmentValue("GHOSTTY_BIN", ghosttyCLIPath)
-            }
             let currentPath = env["PATH"]
                 ?? getenv("PATH").map { String(cString: $0) }
                 ?? ProcessInfo.processInfo.environment["PATH"]
                 ?? ""
-            if !currentPath.split(separator: ":").contains(Substring(cliBinPath)) {
-                setManagedEnvironmentValue(
-                    "PATH",
-                    Self.pathByPrependingUniqueDirectory(cliBinPath, to: currentPath)
-                )
-            }
+            // The PATH fallback above can come from the app process
+            // environment while the template carries no GHOSTTY_BIN_DIR, so
+            // the stale directory must be resolved through the same fallback
+            // chain for its PATH entries to be scrubbed.
+            let staleGhosttyBinDir = env["GHOSTTY_BIN_DIR"]
+                ?? getenv("GHOSTTY_BIN_DIR").map { String(cString: $0) }
+                ?? ProcessInfo.processInfo.environment["GHOSTTY_BIN_DIR"]
+            Self.applyManagedGhosttyCLIEnvironment(
+                cliBinPath: cliBinPath,
+                ghosttyCLIPath: FileManager.default.isExecutableFile(atPath: ghosttyCLIPath)
+                    ? ghosttyCLIPath
+                    : nil,
+                currentPath: currentPath,
+                staleBinDir: staleGhosttyBinDir,
+                to: &env,
+                protectedKeys: &protectedStartupEnvironmentKeys
+            )
         }
 
         if let agentCommandShims {

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Rebuild"
+  short_description: "Build and install the latest cmux code on the user's devices."
+  default_prompt: "Use this skill when rebuilding, refreshing, or installing cmux on the user's iPhone and Mac, especially when iOS should launch but macOS should not be relaunched without explicit permission."
